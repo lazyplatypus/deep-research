@@ -26,6 +26,13 @@ type ResearchResult = {
   visitedUrls: string[];
 };
 
+type ResearchCallbacks = {
+  onProgress?: (progress: ResearchProgress) => void;
+  onQuery?: (query: string, researchGoal: string) => void;
+  onLearning?: (learning: string) => void;
+  onUrl?: (url: string) => void;
+};
+
 // increase this if you have higher API rate limits
 const ConcurrencyLimit = 2;
 
@@ -186,14 +193,16 @@ export async function deepResearch({
   learnings = [],
   visitedUrls = [],
   onProgress,
+  onQuery,
+  onLearning,
+  onUrl,
 }: {
   query: string;
   breadth: number;
   depth: number;
   learnings?: string[];
   visitedUrls?: string[];
-  onProgress?: (progress: ResearchProgress) => void;
-}): Promise<ResearchResult> {
+} & ResearchCallbacks): Promise<ResearchResult> {
   const progress: ResearchProgress = {
     currentDepth: depth,
     totalDepth: depth,
@@ -214,6 +223,11 @@ export async function deepResearch({
     numQueries: breadth,
   });
 
+  // Report each query as it's generated
+  serpQueries.forEach(serpQuery => {
+    onQuery?.(serpQuery.query, serpQuery.researchGoal);
+  });
+
   reportProgress({
     totalQueries: serpQueries.length,
     currentQuery: serpQueries[0]?.query,
@@ -231,8 +245,10 @@ export async function deepResearch({
             scrapeOptions: { formats: ['markdown'] },
           });
 
-          // Collect URLs from this search
+          // Report URLs as they're discovered
           const newUrls = compact(result.data.map(item => item.url));
+          newUrls.forEach(url => onUrl?.(url));
+
           const newBreadth = Math.ceil(breadth / 2);
           const newDepth = depth - 1;
 
@@ -241,6 +257,10 @@ export async function deepResearch({
             result,
             numFollowUpQuestions: newBreadth,
           });
+
+          // Report learnings as they're discovered
+          newLearnings.learnings.forEach(learning => onLearning?.(learning));
+
           const allLearnings = [...learnings, ...newLearnings.learnings];
           const allUrls = [...visitedUrls, ...newUrls];
 
@@ -268,6 +288,9 @@ export async function deepResearch({
               learnings: allLearnings,
               visitedUrls: allUrls,
               onProgress,
+              onQuery,
+              onLearning,
+              onUrl,
             });
           } else {
             reportProgress({
